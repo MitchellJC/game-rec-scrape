@@ -30,21 +30,27 @@ def get_google_image(wd, delay, search):
     time.sleep(delay)
 
     image_urls = set()
+    hrefs = set()
 
     thumbnails = wd.find_elements(By.CSS_SELECTOR, "a[class=\"wXeWr islib nfEiy\"]")
     for thumbnail in thumbnails:
         thumbnail.click()
         time.sleep(delay)
         images = wd.find_elements(By.CSS_SELECTOR, "img[class=\"r48jcc pT0Scc iPVvYb\"]")
+        links = wd.find_elements(By.CSS_SELECTOR, "a[class=\"Du2c7e\"]")
         for image in images:
             src = image.get_attribute('src')
             if src and "http" in src and ".jpg" in src:
                 image_urls.add(image.get_attribute('src'))
+                
+                for link in links:
+                    href = link.get_attribute('href')
+                    hrefs.add(href)
 
         if len(image_urls) == 1:
             break
 
-    return image_urls.pop()
+    return image_urls.pop(), hrefs.pop()
 
 def main():
     item_data = pd.read_csv('data/games.csv')
@@ -55,15 +61,22 @@ def main():
 
     # Gather image urls
     urls = {}
-    for id, title in titles[:10]:
-        url = get_google_image(wd, DELAY, title + " videogame cover art")
-        urls[id, title] = url
-        print(title, url)
+    for id, title in titles:
+        url, href = get_google_image(wd, DELAY, title + " videogame cover art")
+        urls[id, title] = url, href
+        print(title, url, href)
         
     # Download images
     for id, title in urls:
-        url = urls[id, title]
+        url, href = urls[id, title]
         download_image("covers/", url, str(id) + ".jpg")
+
+    # Save links
+    with open("links.csv", "w", ) as file:
+        writer = csv.writer(file, delimiter=',')
+        for id, title in urls:
+            url, href = urls[id, title]
+            writer.writerow([id, href])
         
     input()
 
