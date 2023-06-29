@@ -32,6 +32,7 @@ def get_google_image(wd, delay, search):
     image_urls = set()
     hrefs = set()
 
+    wd.execute_script("window.scrollTo(0, document.body.scrollHeight);")
     thumbnails = wd.find_elements(By.CSS_SELECTOR, "a[class=\"wXeWr islib nfEiy\"]")
     for thumbnail in thumbnails:
         thumbnail.click()
@@ -61,22 +62,36 @@ def main():
 
     # Gather image urls
     urls = {}
-    for id, title in titles:
-        url, href = get_google_image(wd, DELAY, title + " videogame cover art")
-        urls[id, title] = url, href
-        print(title, url, href)
-        
-    # Download images
-    for id, title in urls:
-        url, href = urls[id, title]
-        download_image("covers/", url, str(id) + ".jpg")
+    i = 0
+    for id, title in titles[3000:]: # already done 3000
+        if i % 500 == 0:
+            print(f"Done {i}/{len(titles)}")
 
-    # Save links
-    with open("links.csv", "w", ) as file:
-        writer = csv.writer(file, delimiter=',')
-        for id, title in urls:
-            url, href = urls[id, title]
-            writer.writerow([id, href])
+        # Get image links
+        try:
+            url, href = get_google_image(wd, DELAY, title + " videogame cover art")
+            urls[id, title] = url, href
+        except:
+            print("Error with getting", title)
+
+        # Try downloading
+        try:
+            download_image("covers/", url, str(id) + ".jpg")
+        except:
+            print("Error with downloading", title)
+        
+
+        # Save link
+        try:
+            with open("links.csv", "w", ) as file:
+                writer = csv.writer(file, delimiter=',')
+                for id, title in urls:
+                    url, href = urls[id, title]
+                    writer.writerow([id, href])
+        except:
+            print("Error with saving link", title)
+
+        i += 1
         
     input()
 
