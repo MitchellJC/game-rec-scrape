@@ -1,4 +1,3 @@
-
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from PIL import Image
@@ -7,17 +6,20 @@ import requests
 import io
 import time
 import csv
+import os
 
 DELAY = 2
 
 def download_image(down_path, url, file_name):
     request = requests.get(url)
 
+    # Convert request data to image
     image_content = request.content
     image_file = io.BytesIO(image_content)
     image = Image.open(image_file)
     file_path = down_path + file_name
 
+    # Save image
     with open(file_path, 'wb') as file:
         image.save(file)
 
@@ -32,13 +34,20 @@ def get_google_image(wd, delay, search):
     image_urls = set()
     hrefs = set()
 
+    # Scroll to bottom of page
     wd.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+
+    # Find all image thumbnails
     thumbnails = wd.find_elements(By.CSS_SELECTOR, "a[class=\"wXeWr islib nfEiy\"]")
     for thumbnail in thumbnails:
+
+        # Get image and source for thumbnail
         thumbnail.click()
         time.sleep(delay)
         images = wd.find_elements(By.CSS_SELECTOR, "img[class=\"r48jcc pT0Scc iPVvYb\"]")
         links = wd.find_elements(By.CSS_SELECTOR, "a[class=\"Du2c7e\"]")
+
+        # Save download links
         for image in images:
             src = image.get_attribute('src')
             if src and "http" in src and ".jpg" in src:
@@ -48,6 +57,7 @@ def get_google_image(wd, delay, search):
                     href = link.get_attribute('href')
                     hrefs.add(href)
 
+        # Stop going through thumbnails if we got valid download link
         if len(image_urls) == 1:
             break
 
@@ -63,22 +73,30 @@ def main():
     # Gather image urls
     urls = {}
     i = 0
-    for id, title in titles[3000:]: # already done 3000
-        if i % 500 == 0:
-            print(f"Done {i}/{len(titles)}")
+    for id, title in titles:
+        # Ignore if already downloaded
+        if os.path.exists(f"covers/{id}.jpg"):
+            i += 1
+            continue
+        
+        # Get links and download
+        downloaded = False
+        extra_search = " videogame cover art"
+        while not downloaded:
+            # Get image links
+            try:
+                url, href = get_google_image(wd, DELAY, title + extra_search)
+                urls[id, title] = url, href
+            except:
+                print("Error with getting", title)
 
-        # Get image links
-        try:
-            url, href = get_google_image(wd, DELAY, title + " videogame cover art")
-            urls[id, title] = url, href
-        except:
-            print("Error with getting", title)
-
-        # Try downloading
-        try:
-            download_image("covers/", url, str(id) + ".jpg")
-        except:
-            print("Error with downloading", title)
+            # Try downloading
+            try:
+                download_image("covers/", url, str(id) + ".jpg")
+                downloaded = True
+            except:
+                print("Error with downloading", title)
+                extra_search += " download"
         
 
         # Save link
@@ -91,6 +109,7 @@ def main():
         except:
             print("Error with saving link", title)
 
+        print(f"Done {i}/{len(titles)}", title)
         i += 1
         
     input()
