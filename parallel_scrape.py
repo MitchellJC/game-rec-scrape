@@ -13,7 +13,11 @@ import os
 DELAY = 2
 
 def download_image(down_path, url, file_name):
-    request = requests.get(url)
+    try:
+        request = requests.get(url, timeout=10)
+    except requests.exceptions.Timeout:
+        print("Request timed out")
+
 
     # Convert request data to image
     image_content = request.content
@@ -26,7 +30,7 @@ def download_image(down_path, url, file_name):
         image.save(file)
 
 
-def get_google_image(wd, delay, search):
+def get_google_image(wd, delay, search, id):
     url = "https://images.google.com/"
     wd.get(url)
     search_bar = wd.find_element("id", "APjFqb")
@@ -36,37 +40,89 @@ def get_google_image(wd, delay, search):
     image_urls = set()
     hrefs = set()
 
-    # Scroll to bottom of page
-    wd.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+    downloaded_image = False
+    got_href = False   
 
-    # Find all image thumbnails
-    thumbnails = wd.find_elements(By.CSS_SELECTOR, "a[class=\"wXeWr islib nfEiy\"]")
-    for thumbnail in thumbnails:
-
-        # Get image and source for thumbnail
-        thumbnail.click()
+    while not (downloaded_image and got_href):
+        # Scroll to bottom of page
+        wd.execute_script("window.scrollTo(0, document.body.scrollHeight);")
         time.sleep(delay)
-        images = wd.find_elements(By.CSS_SELECTOR, "img[class=\"r48jcc pT0Scc iPVvYb\"]")
-        links = wd.find_elements(By.CSS_SELECTOR, "a[class=\"Du2c7e\"]")
 
-        # Save download links
-        for image in images:
-            src = image.get_attribute('src')
-            if src and "http" in src and ".jpg" in src:
-                image_urls.add(image.get_attribute('src'))
-                
-                for link in links:
-                    href = link.get_attribute('href')
-                    hrefs.add(href)
-
-        # Stop going through thumbnails if we got valid download link
-        if len(image_urls) == 1:
+        # Load more images
+        show_mores = wd.find_elements(By.CSS_SELECTOR, "input[class=\"LZ4I\"]")
+        for show_more in show_mores:
+            try:
+                show_more.click()
+            except:
+                continue
+            time.sleep(delay)
+            break
+        see_more_anyways = wd.find_elements(By.CSS_SELECTOR, "span[class=\"XfJHbe\"]")
+        for see_more_anyway in see_more_anyways:
+            try:
+                see_more_anyway.click()
+            except:
+                continue
+            time.sleep(delay)
             break
 
-    return image_urls.pop(), hrefs.pop()
+        # Find all image thumbnails
+        thumbnails = wd.find_elements(By.CSS_SELECTOR, "a[class=\"wXeWr islib nfEiy\"]")
+        for thumbnail in thumbnails:
+            if downloaded_image and got_href:
+                    break
+            
+            # Get image and source for thumbnail
+            try:
+                thumbnail.click()
+            except:
+                continue
+
+            time.sleep(delay)
+            
+            # Try find image and link
+            try:
+                images = wd.find_elements(By.CSS_SELECTOR, "img[class=\"r48jcc pT0Scc iPVvYb\"]")
+                links = wd.find_elements(By.CSS_SELECTOR, "a[class=\"Du2c7e\"]")
+            except:
+                print("Error finding images and links for", search)
+
+            # Download image and save source
+            for image in images:
+                if downloaded_image and got_href:
+                    break
+
+                # If valid image link
+                src = image.get_attribute('src')
+                if src and "http" in src and ".jpg" in src:
+                    url = image.get_attribute('src')
+
+                    # Try downloading
+                    try:
+                        download_image("covers/", url, str(id) + ".jpg")
+                        downloaded_image = True
+                    except:
+                        downloaded_image = False
+                        print("Error with downloading", search)
+                        continue
+                    
+                    # Try finding source link
+                    for link in links:
+                        try:
+                            href = link.get_attribute('href')
+                            got_href = True
+                            break
+                        except:
+                            got_href = False
+                            print("Error getting ref for", search)
+                            continue
+
+    return url, href
 
 def scrape_for_titles(titles):
     wd = webdriver.Chrome()
+
+    titles = [(id, title) for id, title in titles if not os.path.exists(f"covers/{id}.jpg")]
 
     # Gather image urls
     urls = {}
@@ -78,25 +134,12 @@ def scrape_for_titles(titles):
             continue
         
         # Get links and download
-        downloaded = False
         extra_search = " videogame cover art"
-        while not downloaded:
-            # Get image links
-            try:
-                url, href = get_google_image(wd, DELAY, title + extra_search)
-                urls[id, title] = url, href
-            except:
-                print("Error with getting", title)
-
-            # Try downloading
-            try:
-                download_image("covers/", url, str(id) + ".jpg")
-                downloaded = True
-            except:
-                print("Error with downloading", title)
-                extra_search += " download"
+  
+        # Try download image
+        url, href = get_google_image(wd, DELAY, title + extra_search, id)
+        urls[id, title] = url, href
         
-
         # Save link
         try:
             with open("links.csv", "w", ) as file:
@@ -115,11 +158,12 @@ def main():
     title_frame = item_data[['app_id', 'title']]
     titles = [(id, title) for _, id, title in title_frame.itertuples()]
 
-    num_cpu = mp.cpu_count() - 1 # Leave one free
+    num_cpu =  mp.cpu_count()
     indices = np.arange(len(titles))
     splits_ind = np.array_split(indices, num_cpu)
     splits = [titles[indices[0]:indices[-1]] for indices in splits_ind]
     
+    # Spawn a process for each cpu
     for p in range(num_cpu):
         process = mp.Process(target=scrape_for_titles, args=[splits[p]])
         process.start()
