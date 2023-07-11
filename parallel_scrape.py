@@ -11,6 +11,7 @@ import csv
 import os
 
 DELAY = 2
+NUM_CORES = 6
 
 def download_image(down_path, url, file_name):
     try:
@@ -34,7 +35,10 @@ def get_google_image(wd, delay, search, id):
     url = "https://images.google.com/"
     wd.get(url)
     search_bar = wd.find_element("id", "APjFqb")
-    search_bar.send_keys(search + "\n")
+    try:
+        search_bar.send_keys(search + "\n")
+    except:
+        return None, None
     time.sleep(delay)
 
     image_urls = set()
@@ -121,8 +125,7 @@ def get_google_image(wd, delay, search, id):
 
 def scrape_for_titles(titles):
     wd = webdriver.Chrome()
-
-    titles = [(id, title) for id, title in titles if not os.path.exists(f"covers/{id}.jpg")]
+    time.sleep(DELAY)
 
     # Gather image urls
     urls = {}
@@ -150,15 +153,21 @@ def scrape_for_titles(titles):
         except:
             print("Error with saving link", title)
 
-        print(f"Done {i}/{len(titles)}", title)
         i += 1
+        print(f"Done {i}/{len(titles)}", title)
+    
+    print("Done all!")
+        
 
 def main():
     item_data = pd.read_csv('data/games.csv')
     title_frame = item_data[['app_id', 'title']]
     titles = [(id, title) for _, id, title in title_frame.itertuples()]
 
-    num_cpu =  mp.cpu_count()
+    # Remove titles already downloaded
+    titles = [(id, title) for id, title in titles if not os.path.exists(f"covers/{id}.jpg")]
+
+    num_cpu =  NUM_CORES - 1
     indices = np.arange(len(titles))
     splits_ind = np.array_split(indices, num_cpu)
     splits = [titles[indices[0]:indices[-1]] for indices in splits_ind]
